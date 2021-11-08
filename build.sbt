@@ -9,3 +9,7 @@ publishMavenStyle := true
 
 skip in publish := false
 skip in publishLocal := false
+
+libraryDependencies ++= Seq(
+  "io.get-coursier" %% "coursier" % "2.0.13",
+)
