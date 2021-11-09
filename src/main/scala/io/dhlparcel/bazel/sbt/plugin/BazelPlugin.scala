@@ -18,14 +18,14 @@ object BazelPlugin extends AutoPlugin {
 
   import autoImport._
 
-  def quoted(str: String) = '"' + str + '"'
+  private def quoted(str: String) = '"' + str + '"'
 
-  val aggregateFilter = ScopeFilter(
+  private val aggregateFilter = ScopeFilter(
     inAggregates(ThisProject),
     inConfigurations(Compile)
   )
 
-  def scala_test(name: String, testDeps: String) =
+  private def scala_test(name: String, testDeps: String) =
     s"""scala_test(
       |  name = "$name-test",
       |  srcs = glob(["src/test/scala/**/*.scala"]),
@@ -34,6 +34,14 @@ object BazelPlugin extends AutoPlugin {
       |  deps = [$testDeps]
       |)
       |""".stripMargin
+
+  private def resolveTransitive(deps: Set[BuildDependency], resolvers: Seq[BuildResolver]) =
+    Resolve()
+      .addDependencies(deps.map(_.coursier).toList:_*)
+      .addRepositories(resolvers.map(_.coursier):_*)
+      .run()
+      .dependencies
+      .map(x => BuildDependency(x.module.orgName.split(":").head, BuildArtifactId(x.module.name.value, Some(x.module.name.value)), x.version, None, None, None))
 
   override def projectSettings: Seq[Def.Setting[_]] =
     Seq(
@@ -59,8 +67,10 @@ object BazelPlugin extends AutoPlugin {
         val scalacOpts = scalacOptions.value.filterNot(_.startsWith("-P:wartremover")).map(quoted).mkString(",\r\n")
         val sbtCredentials = findCredentials.value
         val mainClz = (Compile / mainClass).value
+        val intDeps = projectDependencies.value.map(moduleId => quoted(s"//${moduleId.name}"))
         val libraryDeps = libraryDependencies.value
           .map(moduleId => toDependency(moduleId, scalaVersionValue, scalaBinaryVersionValue))
+          .toSet
 
         def getCredentials(url: URL): Option[BuildResolver.Credentials] =
           Try(Credentials.forHost(sbtCredentials, url.getHost)).toOption.flatten
@@ -76,34 +86,21 @@ object BazelPlugin extends AutoPlugin {
             BuildResolver.BuildIvyRepository(repo.name, ivyPatterns, creds)
         }
 
-        val intDeps = projectDependencies.value.map(moduleId => quoted(s"//${moduleId.name}:${moduleId.name}"))
-
-
-
         log.info(s"Generating BUILD in ${directory.name}")
 
         if(name == "root") {
           IO.write(directory / "BUILD", "")
         } else {
 
-          val testLibs = Resolve()
-            .addDependencies(libraryDeps.filter(_.isTest).map(_.coursier):_*)
-            .addRepositories(resolvers.map(_.coursier):_*)
-            .run()
-            .dependencies
-            .map(x => BuildDependency(x.module.orgName.split(":").head, BuildArtifactId(x.module.name.value, Some(x.module.name.value)), x.version, None, None, None))
-
-          val runtimeLibs = Resolve()
-            .addDependencies(libraryDeps.filter(_.buildDef).map(_.coursier): _*)
-            .addRepositories(resolvers.map(_.coursier): _*)
-            .run()
-            .dependencies
-            .map(x => BuildDependency(x.module.orgName.split(":").head, BuildArtifactId(x.module.name.value, Some(x.module.name.value)), x.version, None, None, None))
-
+          val testLibs = resolveTransitive(libraryDeps.filter(_.isTest), resolvers)
+//          val testLibs = libraryDeps.filter(_.isTest)
+          val runtimeLibs = resolveTransitive(libraryDeps.filter(_.buildDef), resolvers)
+//          val runtimeLibs = libraryDeps.filter(_.buildDef)
           val compilerPlugins = libraryDeps.filter(_.isPlugin)
           val compilerDefs = compilerPlugins.map(_.asBazelMavenRelativeRef).map(quoted).mkString(",")
           val extDeps = runtimeLibs.map(x => quoted(x.asBazelMavenRelativeRef))
-          val deps = (intDeps ++ extDeps).toList.sorted.mkString(",\r\n")
+
+          val deps = (extDeps ++ intDeps).toList.sorted.mkString(",\r\n")
 
           val exportedDeps = (testLibs ++ runtimeLibs ++ compilerPlugins).map(_.asBazelMavenVersionedRef).toList.sorted.mkString("\r\n")
           val exportedResolvers = resolvers.map(_.show).mkString("\r\n")
@@ -139,9 +136,9 @@ object BazelPlugin extends AutoPlugin {
             }
           }
 
-          if(testLibs.nonEmpty) {
-            sb.append(scala_test(name, (testLibs.map(x => quoted(x.asBazelMavenRelativeRef)) + quoted(s"//:$name")).toList.sorted.mkString(",\r\n")))
-          }
+//          if(testLibs.nonEmpty) {
+//            sb.append(scala_test(name, (testLibs.map(x => quoted(x.asBazelMavenRelativeRef)) + quoted(s"//:$name")).toList.sorted.mkString(",\r\n")))
+//          }
 
           IO.write(directory / "BUILD", sb.toString())
           IO.write(directory / "deps.txt", exportedDeps)

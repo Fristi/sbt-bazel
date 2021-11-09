@@ -48,7 +48,7 @@ final case class BuildDependency(
     Dependency(Module(Organization(groupId), ModuleName(artifactId.normalizedName)), version)
 
   def asBazelMavenRelativeRef: String =
-    "@maven//:" + bazelStr(groupId) + "_" + bazelArtifactId(bazelStr)
+    "@jvm_deps//:" + bazelStr(groupId) + "_" + bazelArtifactId(bazelStr)
 }
 
 sealed trait BuildResolver extends Product with Serializable {
