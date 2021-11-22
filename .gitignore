@@ -1,6 +1,6 @@
 *.class
 *.log
-
+.vscode
 .metals
 .env
 .cache

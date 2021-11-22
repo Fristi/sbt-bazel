@@ -19,10 +19,8 @@ final case class BuildDependency(
                                   configurations: Option[String]
                                    ) {
 
-  def bazelArtifactId(transform: String => String) = scalaVersion match {
-    case Some(v) => transform(artifactId.normalizedName) + "_" + transform(v)
-    case None => transform(artifactId.normalizedName)
-  }
+  def bazelArtifactId(transform: String => String) =
+    transform(artifactId.name)
 
   def asBazelMavenVersionedRef: String =
     groupId + ":" + bazelArtifactId(identity) + ":" + version
@@ -31,6 +29,12 @@ final case class BuildDependency(
     str
       .replace(".", "_")
       .replace("-", "_")
+
+  private def slash(str: String) =
+    str
+      .replace(".", "/")
+      .replace("-", "_")
+
 
   def isTest =
     configurations.exists(_.contains("test"))
@@ -48,7 +52,7 @@ final case class BuildDependency(
     Dependency(Module(Organization(groupId), ModuleName(artifactId.normalizedName)), version)
 
   def asBazelMavenRelativeRef: String =
-    "@jvm_deps//:" + bazelStr(groupId) + "_" + bazelArtifactId(bazelStr)
+    "@third_party//3rdparty/jvm/" + slash(groupId) + ":" + bazelArtifactId(bazelStr)
 }
 
 sealed trait BuildResolver extends Product with Serializable {
